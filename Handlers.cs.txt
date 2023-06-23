@@ -1,0 +1,36 @@
+        //移植を楽にするためC#のRegexクラスのメソッドをラップする拡張メソッド群 by mukiyu
+        public static bool ismatch(this string input, string pattern) {
+            return Regex.IsMatch(input, pattern);
+        }
+        public static Match match(this string input, string pattern) {
+            return Regex.Match(input, pattern);
+        }
+        public static MatchCollection matches(this string input, string pattern) {
+            return Regex.Matches(input, pattern);
+        }
+        public static string replace(this string input, string pattern, string replacement) {
+            return Regex.Replace(input, pattern, replacement);
+        }
+        public static string[] split(this string input, string pattern) {
+            return Regex.Split(input, pattern);
+        }
+        //Matchの戻り値を簡単に扱うための奴
+        public static string g(this Match m, int i) {
+            return m.Groups[i].Value;
+        }
+        //htmltodatのメイン処理
+        public static string htmltodat(this string input, string pattern){
+            // 透明あぼーんのチェックも組み込む
+            var abnres = "透明あぼ～ん<>透明あぼ～ん<>透明あぼ～ん ID:DELETED<>透明あぼ～ん<>\n";
+            var d = new StringBuilder(); var prev_resno = 0;
+
+            foreach (Match m in input.matches(pattern)){
+                var resno = int.Parse(m.g(1));
+                if ( resno == 0 ) continue;
+                for ( ; resno - prev_resno > 1; prev_resno++ ) { d.Append(abnres); } // レス番号が飛んでいるとき透明あぼーんレスの挿入
+                d.Append(m.g(3) + "<>" + m.g(2) + "<>" + m.g(4) + "<>" + m.g(5) + "<>" + "\n");
+                prev_resno = resno;
+            }
+            return d.ToString();
+        }
+        //ここまで

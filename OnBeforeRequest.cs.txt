@@ -1,0 +1,47 @@
+            // datへのリクエストをread.cgiへのリクエストに変換 by mukiyu
+
+            //2ch.netへのリクエストはとりあえず全部5ch.netに向ける v3.04
+            if (oSession.url.ismatch(@"(?:\.[25]ch\.net/)")){
+                oSession.url = oSession.url.replace(@".2ch\.(net)",".5ch.$1");
+            }
+
+            if (oSession.url.ismatch(@"(?:\.[25]ch\.net|\.bbspink\.com)(?::\d+)?/.*?/(?:dat|kako)/")){
+                //2chへの読み込みリクエストを5chへの読み込みリクエストに変換 5ch対応の板一覧を使っていれば多分不要
+                //oSession.url = oSession.url.replace(@".2ch\.(net)",".5ch.$1");
+            
+                //itestはあらかじめ変換しておく
+                oSession.url = oSession.url.replace(@"itest((?:\.[25]ch\.net|\.bbspink\.com)(?::\d+)?)/(.*?)/","$2$1/");
+
+                var v = oSession.url.match(@"((?:.*?\.[25]ch\.net|.*?\.bbspink\.com)(?::\d+)?)/(.*?)/(?:dat|kako)/(?:\d{3,4}/(?:\d{5}/)?)?(\d+)\.dat");
+                oSession.url = v.g(1) + "/test/read.cgi/" + v.g(2) + "/" + v.g(3) + "/";
+                //oSession["htmltodat"] = "on"; //このフラグはリダイレクトがあったら意味なくなるので廃止
+
+                var headers = oSession.oRequest.headers;
+                if (null != headers["Range"] && oSession["HeaderRange"] == null) {
+                    oSession["HeaderRange"] = headers["Range"];
+                    headers.Remove("Range");
+                }
+
+                //過去ログでサーバ名が変わっていて読めない場合などに無理やり書き換え・・・必要に応じて適宜修正
+                //oSession.url = oSession.url.replace(@"anago\.2ch","anago.5ch");
+
+                oSession.oRequest["Accept-Encoding"] = "gzip";
+                //読み込み時のUAを変更したい場合は以下を変更
+                //oSession.oRequest["User-Agent"] = "Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.87 Safari/537.36";
+            }
+
+            //書き込み（bbs.cgi）についての処理は以下で
+            if (oSession.url.ismatch(@"bbs.cgi$")) {
+                //5chへの書き込みリクエストを2chへの書き込みリクエストに変換
+                //oSession.url = oSession.url.replace(@".5ch\.(net)",".2ch.$1");
+
+                //書き込み時のUAを変更したい場合は以下を変更
+                //oSession.oRequest["User-Agent"] = "Monazilla/1.00 JaneStyle/3.84 Windows/6.3.9600";
+                oSession.oRequest["Accept"] = "text/html";
+                oSession.oRequest["Accept-Language"] = "ja"; //UAに汎用ブラウザのものを指定する場合「ブラウザ変ですよん」のエラーになることがあるがこの一行で回避できるようだ
+            }
+            //5chへの読み書きは全てhttpsになったので対応
+            if (oSession.url.ismatch(@"(?:\.[25]ch\.net|\.bbspink\.com)/(test/|[^./]*?/subject\.txt)")){
+                oSession.oRequest.headers.UriScheme = "https";
+            }
+            //ここまで

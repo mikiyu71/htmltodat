@@ -1,0 +1,135 @@
+            //read.cgiからのレスポンスをdatに変換 by mukiyu
+
+            //if (oSession["htmltodat"] == null) return;
+            if (oSession.responseCode != 200) return;
+
+            // 以下は、bbsmenuのhttps及び5ch記述に対応していないブラウザ用なので必要に応じてコメントを外すこと v3.04から
+            if (oSession.url.ismatch(@"\.[25]ch\.net/bbsmenu")){
+                oSession.utilDecodeResponse();
+                oSession.oResponse["Content-Type"] = "text/plain; charset=Shift_JIS";
+                var oBody = oSession.GetResponseBodyAsString();
+                // bbsmenu内のurlの記述が「https://」に対応していない場合は次の行のコメントを外す
+                //oBody = oBody.replace(@"https:","http:");
+                // bbsmenu内のurの記述が「5ch.net」に対応していない場合は次の行のコメントを外す
+                //oBody = oBody.replace(@"\.5ch\.(net)",".2ch.$1");
+                var oBodyb = System.Text.Encoding.GetEncoding("shift-jis").GetBytes(oBody);
+                oSession.ResponseBody = oBodyb;
+            }
+
+            if (oSession.url.ismatch(@"(?:\.[25]ch\.net|\.bbspink\.com)(?::\d+)?/test/read")) 
+            {
+                //gzip圧縮やチャンクエンコーディングがある場合にプレーンデータに変換
+                oSession.utilDecodeResponse();
+                //"text/html"を受け付けてくれないブラウザへの対応
+                oSession.oResponse["Content-Type"] = "text/plain; charset=Shift_JIS";
+                //以下1行はレスポンス内容を取得するお約束のようだ
+                var oBody = oSession.GetResponseBodyAsString();
+                //datが存在しないなどまっとうなレスポンスでない場合404を返して抜ける（ここはまだ要検討）
+                //if (oBody.ismatch(@"<dl ")||oBody.ismatch(@"(<div|span) class=""number"">")){
+                if (oBody.ismatch(@"<dl ")||oBody.ismatch(@"(<div|span) class=""number"">")||oBody.ismatch(@"<div id=""thread""")){
+                }else{
+                    oSession.responseCode = 404;
+                    return;
+                }   
+                //スレのタイトルを取得
+                var title = oBody.match(@"<title.*?>(.*?)\s*?</title>"); //read.cgi 06対応、v2.25で read.cgi 07の仕様変更に対応
+
+                //htmltodat変換
+                if (oBody.ismatch(@"<div class=""number"">")){ //read.cgi 06用
+                    // htmltodat変換メイン レス番号($1)は最終的なdatには必要ないが透明あぼーんのチェックのためここではデータに含めておく（v2.16より）
+                    oBody = oBody.htmltodat(@"<div class=""post"".*?><div class=""number"">(\d+).*?</div><div class=""name""><b>(?:<a href=""mailto:(.*?)"">)?(.*?)(?:</a>)?</b></div><div class=""date"">(.*?)</div><div class=""message"">(.*?)</div></div>");
+                    // BE周りの処理 若干他の場合とかぶってしまうが仕方ない 何かあったら合わせて修正する
+                    oBody = oBody.replace(@"</div><div class=""be .*?><a href="".*?//be\.[25]ch\.net/user/(\d+).*?>\?(.*?)</a>"," BE:$1-$2");
+                    oBody = oBody.replace(@"<img src="".*?//(img\.[25]ch\.net/.+?)"">","sssp://$1");
+
+                }else if (oBody.ismatch(@"<dl class=""post"".*?<span class=""number"">")){ //bbspinkの新read.cgi用 v2.15より
+                    // htmltodat変換メイン
+                    oBody = oBody.htmltodat(@"<dl class=""post"".*?><dt class=""""><span class=""number"">(\d+).*?</span><span class=""name""><b>(?:<a href=""mailto:(.*?)"">)?(.*?)(?:</a>)?</b></span><span class=""date"">(.*?)</dt><dd class=""thread_in"">(.*?)</dd></dl>");
+                    // 名前欄のfontタグ除去
+                    oBody = oBody.replace(@"<font color=""green"">(.*?)</font>","$1");
+                    // BE周りの処理
+                    oBody = oBody.replace(@"</span><div class=""be .*?><a href="".*?//be\.[25]ch\.net/user/(\d+).*?>\?(.*?)</a></div>"," BE:$1-$2");
+                    oBody = oBody.replace(@"</span><>","<>"); // BE周り処理との絡みでゴミが残るので除去
+                    oBody = oBody.replace(@"<img src="".*?//(img\.[25]ch\.net/.+?)"">","sssp://$1");
+
+                }else if (oBody.ismatch(@"<div class=""post"".*?<span class=""number"">")){ //read.cgi 07用 v2.20より
+                    // htmltodat変換メイン
+                    oBody = oBody.htmltodat(@"<div class=""post"".*?><div class=""meta""><span class=""number"">(\d+).*?</span><span class=""name""><b>(?:<a href=""mailto:(.*?)"">)?(.*?)(?:</a>)?</b></span><span class=""date"">(.*?)</span></div><div class=""message""><span class=""escaped"">(.*?)</span></div></div><br>");
+                    // BE周りの処理
+                    //be.bbspink.comが追加されていたので対応 v3.0
+                    oBody = oBody.replace(@"</span><span class=""be .*?><a href="".*?//be\.(?:[25]ch\.net|bbspink\.com)/user/(\d+).*?>\?(.*?)</a>"," BE:$1-$2");
+                    oBody = oBody.replace(@"<img src="".*?//(img\.[25]ch\.net/.+?)"">","sssp://$1");
+                    //read.cgi 07.0.1 からIDの前に付くようになったタグを除去
+                    oBody = oBody.replace(@"</span><span class=""uid"">"," ");
+
+                }else if (oBody.ismatch(@"<div id=""thread""")){ //read.cgi 08用 v3.05より
+                    // htmltodat変換メイン
+                    oBody = oBody.htmltodat(@"<span class=""postid"">(\d+)</span><span class=""postusername""><b>(?:<a href=""mailto:(.*?)"">)?(.*?)(?:</a>)?</b></span></summary><span class=""date"">(.*?)</span></details><section class=""post-content"">(.*?)</section>");
+                    // BE周りの処理
+                    //be.bbspink.comが追加されていたので対応 v3.0
+                    oBody = oBody.replace(@"</span><span class=""be .*?><a href="".*?//be\.(?:[25]ch\.net|bbspink\.com)/user/(\d+).*?>\?(.*?)</a>"," BE:$1-$2");
+                    oBody = oBody.replace(@"<img src="".*?//(img\.[25]ch\.net/.+?)"">","sssp://$1");
+                    //read.cgi 07.0.1 からIDの前に付くようになったタグを除去
+                    oBody = oBody.replace(@"</span><span class=""uid"">"," ");
+
+                }else{ //read.cgi 05用
+                    // htmltodat変換メイン
+                    oBody = oBody.htmltodat(@"<dt.*?>(\d+).+?(?:""mailto:(.+?)"">)?<b>(.+?)</b>(?:</font>|</a>)\s?：(.*?)<dd>(.*?)<br><br>");
+                    oBody = oBody.replace(@"<a href=.?javascript:be\((.+)(?:,\d+)?\).*?>\?(.*?)</a>","BE:$1-$2");
+                    oBody = oBody.replace(@"<img src="".*?//(img\.[25]ch\.net/.+?)"">","sssp://$1");
+                }
+                // お絵かき機能やEmoticonのimgタグを除去。dat上では除去されてるのでそれに従ったがブラウザによってはなくてもいいかもしれない
+                oBody = oBody.replace(@"<img src=""[^/>]*?(//[^""]*?)"">","sssp:$1");
+                //後処理
+                //アンカータグ削除（レスアンカーに対するタグは削除しない）
+                oBody = oBody.replace(@"<a(?: class=""image"")? href=""http.*?>(.*?)</a>","$1"); //class="image"はread.cgi 07.2.1 から
+                //以下２行もread.cgi 07.2.1 から
+                oBody = oBody.replace(@"<><span class=""AA"">(.*?)</span><>","<>$1<>");
+                oBody = oBody.replace(@"(target=""_blank"").*?>","$1>");
+                //半角スペースの連続を除去（read.cgiの挙動不審に対応）
+                oBody = oBody.replace(@"  +"," ");
+
+                //変換後の１レス目にタイトルを付加 
+                //oBody = oBody.replace(@"(?s:^(.*?<>.*?<>.*?<>.*?<>)\n)", "$1" + title.g(1) + "\n");
+                //title先頭が数字で始まると$15みたいに解釈されてしまいうまくいかないので一旦特殊文字を挟んで変換後元に戻す（jsだとなぜ問題にならないの？）
+                oBody = oBody.replace(@"(?:^(.+?)\n)", "$1\x1f" + title.g(1) + "\n").replace(@"\x1f","");
+
+                //差分取得処理
+                var oBodyb = System.Text.Encoding.GetEncoding("shift-jis").GetBytes(oBody);
+                if (oSession["HeaderRange"] != null){
+                    var hm = oSession["HeaderRange"].match(@"bytes=(\d+)-");
+                    if (hm.Success) {
+                        var bodylength = oBodyb.Length;
+                        var sb = int.Parse(hm.g(1));
+FiddlerObject.log(sb+"/"+bodylength);
+                        if (sb == bodylength) {
+                            oSession.responseCode = 304;
+                            oSession.oResponse.headers.Remove("Content-Type");
+                            oSession.ResponseBody = null;
+                            return;
+                        } else if (sb > bodylength){
+                            oSession.responseCode = 416;
+                            oSession.oResponse.headers.Remove("Content-Type");
+                            oSession.ResponseBody = null;
+                            return;
+                        } else {
+                            oSession.responseCode = 206;
+                            //oBody = oBody.slice(sb); //sliceはC#にはないが
+                            //Linqを使えば次のようにわりとスッキリ書けるようなのだがなぜかうちの環境ではLinqがコンパイル通らない
+                            //var oBodyb2 = oBodyb.Skip(sb).Take(bodylength-sb).ToArray();
+                            var oBodyb2 = new byte[bodylength-sb];
+                            for (int i=sb,j=0; i<bodylength; i++,j++) {oBodyb2[j]=oBodyb[i];}
+                            oBodyb = oBodyb2;
+                            oSession.oResponse.headers["Content-Range"] = "bytes " + sb + "-" + (bodylength - 1) + "/" + bodylength;
+                        }
+                    }
+                }
+
+                oSession.ResponseBody = oBodyb;
+
+                //ブラウザによってはLast-Modifiedヘッダがないと不都合が起きるのでその対応
+                if (oSession.oResponse["Last-Modified"] == null){
+                    oSession.oResponse["Last-Modified"] = oSession.oResponse["Date"];
+                }
+            }
+        //ここまで
